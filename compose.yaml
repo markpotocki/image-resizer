@@ -1,0 +1,10 @@
+services:
+  server:
+    build:
+      context: .
+      target: final
+    environment:
+      - HOST=
+      - PORT=4200
+    ports:
+      - 4200:4200

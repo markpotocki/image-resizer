@@ -1,0 +1,92 @@
+openapi: 3.0.0
+info:
+  title: Image Resizer API
+  description: API for resizing images
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /resize:
+    post:
+      summary: Resize an image
+      parameters:
+        - name: width
+          in: query
+          description: Width of the resized image
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: height
+          in: query
+          description: Height of the resized image
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/png:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: Image resized successfully
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid input
+        '500':
+          description: Internal server error
+
+  /convert:
+    post:
+      summary: Convert an image
+      parameters:
+        - name: format
+          in: query
+          description: Format of the converted image
+          required: true
+          schema:
+            type: string
+            enum: [jpeg, png]
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/png:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: Image converted successfully
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid input
+        '500':
+          description: Internal server error
