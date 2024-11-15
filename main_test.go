@@ -3,14 +3,17 @@ package main
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"image"
 	"image/color"
+	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -40,6 +43,15 @@ func TestResizeImage(t *testing.T) {
 				return png.Encode(w, img)
 			},
 			ext:       "png",
+			expectErr: false,
+		},
+		{
+			name:   "GIF image",
+			format: "gif",
+			encode: func(w io.Writer, img image.Image) error {
+				return gif.Encode(w, img, nil)
+			},
+			ext:       "gif",
 			expectErr: false,
 		},
 		{
@@ -158,6 +170,13 @@ func TestHandleResize(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			expectedError:  "",
 		},
+		{
+			name:           "Valid GIF resize",
+			queryParams:    "height=50&width=50&format=gif",
+			imageData:      createImage(t, "gif"),
+			expectedStatus: http.StatusOK,
+			expectedError:  "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -214,6 +233,13 @@ func TestHandleConvert(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			expectedError:  "",
 		},
+		{
+			name:           "Valid GIF to PNG conversion",
+			queryParams:    "format=png",
+			imageData:      createImage(t, "gif"),
+			expectedStatus: http.StatusOK,
+			expectedError:  "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -234,6 +260,140 @@ func TestHandleConvert(t *testing.T) {
 	}
 }
 
+func TestHandleThumbnail(t *testing.T) {
+	tests := []struct {
+		name           string
+		queryParams    string
+		imageData      []byte
+		expectedStatus int
+		expectedError  string
+	}{
+		{
+			name:           "Missing width parameter",
+			queryParams:    "",
+			imageData:      nil,
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "missing required parameter: width\n",
+		},
+		{
+			name:           "Invalid width parameter",
+			queryParams:    "width=abc",
+			imageData:      nil,
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "invalid width: abc\n",
+		},
+		{
+			name:           "Valid JPEG thumbnail",
+			queryParams:    "width=50",
+			imageData:      createImage(t, "jpeg"),
+			expectedStatus: http.StatusOK,
+			expectedError:  "",
+		},
+		{
+			name:           "Valid PNG thumbnail",
+			queryParams:    "width=50",
+			imageData:      createImage(t, "png"),
+			expectedStatus: http.StatusOK,
+			expectedError:  "",
+		},
+		{
+			name:           "Valid GIF thumbnail",
+			queryParams:    "width=50",
+			imageData:      createImage(t, "gif"),
+			expectedStatus: http.StatusOK,
+			expectedError:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/thumbnail?"+tt.queryParams, bytes.NewReader(tt.imageData))
+			rr := httptest.NewRecorder()
+
+			handler := Handler(HandleThumbnail)
+			handler.ServeHTTP(rr, req)
+
+			assert.Equal(t, tt.expectedStatus, rr.Code)
+			if tt.expectedError != "" {
+				assert.Equal(t, tt.expectedError, rr.Body.String())
+			} else {
+				assert.NotEmpty(t, rr.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestParseFlags(t *testing.T) {
+	tests := []struct {
+		name     string
+		envVars  map[string]string
+		args     []string
+		expected Flags
+	}{
+		{
+			name:    "Default values",
+			envVars: map[string]string{},
+			args:    []string{},
+			expected: Flags{
+				Host: "localhost",
+				Port: 8080,
+			},
+		},
+		{
+			name:    "Command line arguments",
+			envVars: map[string]string{},
+			args:    []string{"-host", "127.0.0.1", "-port", "9090"},
+			expected: Flags{
+				Host: "127.0.0.1",
+				Port: 9090,
+			},
+		},
+		{
+			name: "Environment variables",
+			envVars: map[string]string{
+				"HOST": "192.168.1.1",
+				"PORT": "7070",
+			},
+			args: []string{},
+			expected: Flags{
+				Host: "192.168.1.1",
+				Port: 7070,
+			},
+		},
+		{
+			name: "Command line arguments override environment variables",
+			envVars: map[string]string{
+				"HOST": "192.168.1.1",
+				"PORT": "7070",
+			},
+			args: []string{"-host", "10.0.0.1", "-port", "6060"},
+			expected: Flags{
+				Host: "10.0.0.1",
+				Port: 6060,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set environment variables
+			for key, value := range tt.envVars {
+				t.Setenv(key, value)
+			}
+
+			// Set command line arguments
+			flag.CommandLine = flag.NewFlagSet(tt.name, flag.ExitOnError)
+			os.Args = append([]string{"cmd"}, tt.args...)
+
+			// Parse flags
+			flags := ParseFlags()
+
+			// Assert the parsed flags
+			assert.Equal(t, tt.expected, flags)
+		})
+	}
+}
+
 func createImage(t *testing.T, format string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
@@ -247,6 +407,11 @@ func createImage(t *testing.T, format string) []byte {
 		}
 	case "png":
 		err := png.Encode(&buf, img)
+		if err != nil {
+			panic(err)
+		}
+	case "gif":
+		err := gif.Encode(&buf, img, nil)
 		if err != nil {
 			panic(err)
 		}
